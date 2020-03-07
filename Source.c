@@ -34,6 +34,8 @@ void connector(BLOCK*);
 
 void new_end(BLOCK*);
 
+void* coalescing(BLOCK*, BLOCK*);
+
 
 int main() {
 	char region[64];
@@ -41,10 +43,10 @@ int main() {
 	char* pointer = (char*)memory_alloc(8);
 	if (pointer)
 		memset(pointer, '1', 8);
-	char* pointer1 = (char*)memory_alloc(10);
+	char* pointer1 = (char*)memory_alloc(12);
 	if (pointer1)
-		memset(pointer1, '1', 10);
-
+		memset(pointer1, '1', 12);
+	memory_free(pointer);
 	return 0;
 }
 
@@ -94,10 +96,9 @@ void connector(BLOCK* block) {
 
 void new_start(BLOCK* block) {
 	if (block->next == 0)
-		*(unsigned int*)((int)start) += block->size+BNDR_SIZE;
+		*(unsigned int*)((int)start) += block->size + BNDR_SIZE;
 	else
 		*(unsigned int*)((int)start) += block->next;
-
 }
 
 void new_end(BLOCK* block) {
@@ -130,4 +131,39 @@ void* split(BLOCK* block, unsigned int size) {
 
 void* memory_alloc(unsigned int size) {
 	return best_fit(size);
+}
+
+int memory_free(void* valid_ptr) {
+	int k;
+	if (valid_ptr < ((char*)start + *(int*)start)) {
+		k = (char*)start - (char*)valid_ptr;
+	}
+	for (BLOCK* free_block = (BLOCK*)((char*)start + *(int*)start); free_block != 0; ) {
+		if (free_block < valid_ptr) {
+			coalescing((BLOCK*)valid_ptr, free_block);
+		}
+		if (free_block->next == 0)
+			free_block = NULL;
+		else free_block = free_block + (free_block->next);
+	}
+
+}
+
+void* coalescing(BLOCK* block, BLOCK* free_block) {
+	if ((block + block->size+BNDR) == free_block) {
+		free_block->size += block->size + BNDR_SIZE;
+		((BOUNDARY*)(block + block->size))->size = free_block->size;
+		if ((free_block + free_block->next) == (block + block->size + BNDR)) {
+			free_block->size +=(free_block + free_block->next)->size;
+			free_block->next = free_block->next + (free_block + free_block->next)->next;
+			((BOUNDARY*)(free_block + free_block->size))->size = free_block->size;
+		}
+		return free_block;
+	}
+	if ((free_block + free_block->next) == (block + block->size + BNDR)) {
+		block->size += (free_block + free_block->next)->size;
+		block->next = block->size + (block+block->size)->next;
+		((BOUNDARY*)(block + block->size))->size = block->size;
+	}
+	return block;
 }
